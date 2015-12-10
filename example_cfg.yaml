@@ -1,0 +1,19 @@
+---
+test_period: 300
+recv_timeout: 5
+leave_join_interval: 5
+udp_port: 1234
+data_dir: /var/tmp
+data_prefix: testlab
+mcast_groups:
+  - 233.26.0.1
+  - 233.26.0.2
+  - 233.26.0.3
+  - 233.26.0.4
+  - 233.26.0.5
+  - 233.26.0.6
+  - 233.26.0.7
+  - 233.26.0.8
+  - 233.26.0.9
+  - 233.26.0.10
+

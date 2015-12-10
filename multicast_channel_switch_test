@@ -1,0 +1,134 @@
+#!/usr/bin/perl
+
+# This script can be used to test the multicast channel switching in IPTV
+# service environment. It joins a multicast group, waits for the first packet
+# to arrive, then leaves the group, and proceeds with the next group.
+# The test results are written in a CSV file.
+
+# You need to install `IO::Socket::Multicast` Perl module. In Debian,
+# it's available in `libio-socket-multicast-perl` package.
+
+# The script expects a YAML configuration file that describes the test.
+# The following enrties need to be populated in the configuration:
+#   test_period    (default: 300) how frequently the test will be repeated
+#   recv_timeout   (default: 5) how long we wait for the stream packet
+#   leave_join_interval   pause between switching the channel, in seconds
+#   udp_port  UDP port to receive the traffic on
+#   data_dir  directory where the test result CSV will be stored
+#   data_prefix  CSV filename prefix
+#   mcast_groups  A list of multicast group addresses
+
+
+# Copyright (c) 2015 Stanislav Sinyagin <ssinyagin@k-open.com>
+
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+use strict;
+
+use IO::Socket::Multicast;
+use IO::Select;
+use Time::HiRes;
+use YAML();
+use IO::File;
+use Time::Format qw(time_strftime);
+
+$| = 1;
+
+my $cfgfile = shift @ARGV;
+if( not defined($cfgfile) )
+{   
+    print STDERR "Usage: $0 CFG.yaml\n";
+    exit(1);
+}
+
+my $cfg = YAML::LoadFile($cfgfile);
+
+my $period = $cfg->{'test_period'};
+$period = 300 unless defined($period);
+
+my $recv_timeout = $cfg->{'recv_timeout'};
+$recv_timeout = 5 unless defined($recv_timeout);
+
+my $data_dir = $cfg->{'data_dir'};
+die('data_dir is not defined') unless defined($data_dir);
+die($data_dir . ': no such directory') unless -d $data_dir;
+
+my $prefix = $cfg->{'data_prefix'};
+$prefix = '' unless defined($prefix);
+
+my $mcast_groups = $cfg->{'mcast_groups'};
+die('mcast_groups is not defined') unless ref($mcast_groups);
+
+die('mcast_groups is empty') unless scalar(@{$mcast_groups});
+
+my $udp_port = $cfg->{'udp_port'};
+die('udp_port is not defined') unless defined($udp_port);
+
+my $leave_join_interval = $cfg->{'leave_join_interval'};
+die('leave_join_interval is not defined') unless defined($leave_join_interval);
+
+
+while(1)
+{
+    foreach my $group ( @{$mcast_groups} )
+    {
+        my $s = IO::Socket::Multicast->new( LocalPort => $udp_port );
+
+        $s->mcast_add($group);
+
+        my $sel = new IO::Select;
+        $sel->add($s);
+
+        my $t0 = [Time::HiRes::gettimeofday()];
+        my @ready = $sel->can_read($recv_timeout);
+
+        my $elapsed = 0;
+        my $success = 0;
+        
+        if(scalar(@ready))
+        {
+            $elapsed =
+                Time::HiRes::tv_interval( $t0, [Time::HiRes::gettimeofday()]);
+            $success = 1;
+            sleep(1);
+        }
+        
+        $s->mcast_drop($group);
+
+        my $fname = $data_dir . '/' .
+            $prefix . '_' . time_strftime('%Y-%m-%d') . '.csv';
+
+        my $fh = new IO::File($fname, 'a') or die($!);
+        $fh->printf("%s,%s,%d,%d\n",
+                    time_strftime('%Y-%m-%d,%H:%M:%S', $t0->[0]),
+                    $group,
+                    $success,
+                    $elapsed * 1000);
+        $fh->close();
+        
+        sleep $leave_join_interval;
+    }
+
+    my $now = time();
+    my $whenNext = $now - ($now % $period) + $period;
+    sleep($whenNext - time());    
+}
+
+
