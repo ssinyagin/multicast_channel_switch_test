@@ -5,8 +5,10 @@
 # to arrive, then leaves the group, and proceeds with the next group.
 # The test results are written in a CSV file.
 
-# You need to install `IO::Socket::Multicast` Perl module. In Debian,
-# it's available in `libio-socket-multicast-perl` package.
+# You need to install `IO::Socket::Multicast` Perl module and a few
+# others. If running under Debian
+#   apt-get install -y libio-socket-multicast-perl libyaml-perl \
+#     libtime-format-perl
 
 # The script expects a YAML configuration file that describes the test.
 # The following enrties need to be populated in the configuration:
